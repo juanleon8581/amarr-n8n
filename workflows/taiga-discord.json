@@ -1,0 +1,55 @@
+{
+  "name": "Taiga → Discord",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "taiga",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Taiga Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "taiga-events"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.body;\nconst { action, type, by, data, change } = raw;\n\nconst COLORS = {\n  create: 5763719,\n  delete: 15548997,\n  change: 5793266,\n  comment: 16705372\n};\n\nconst TYPE_LABELS = {\n  userstory: 'Historia de usuario',\n  issue: 'Incidencia',\n  task: 'Tarea',\n  milestone: 'Hito',\n  wikipage: 'Página Wiki'\n};\n\nconst TAIGA_BASE = 'https://taiga.ewcam.co';\n\nconst DISCORD_WEBHOOKS = {\n  'Nuevo SIGW':     '__WEBHOOK-URL__',\n  'Soporte':        '__WEBHOOK-URL__',\n  'Desarrollo':     '__WEBHOOK-URL__',\n  'GESTIÓN HUMANA': '__WEBHOOK-URL__',\n  'Contabilidad':   '__WEBHOOK-URL__',\n  'Tienda Webcam':  '__WEBHOOK-URL__',\n  'Tesoreria':      '__WEBHOOK-URL__',\n  'Fotografia':     '__WEBHOOK-URL__',\n  'Asesores':       '__WEBHOOK-URL__',\n  'Marketing':      '__WEBHOOK-URL__',\n  '_default':       '__WEBHOOK-URL__'\n};\n\nconst discordUrl = DISCORD_WEBHOOKS[data?.project?.name] || DISCORD_WEBHOOKS['_default'];\n\nconst typeLabel = TYPE_LABELS[type] || type;\nconst actor = by?.full_name || by?.username || 'Desconocido';\nconst subject = data?.subject || data?.name || 'Sin título';\nconst isComment = action === 'change' && change?.comment;\n\nlet color, title, description = '';\n\nif (action === 'create') {\n  color = COLORS.create;\n  title = `✅ ${typeLabel} creado: ${subject}`;\n  description = data?.description ? data.description.substring(0, 300) : '';\n} else if (action === 'delete') {\n  color = COLORS.delete;\n  title = `🗑️ ${typeLabel} eliminado: ${subject}`;\n} else if (isComment) {\n  color = COLORS.comment;\n  title = `💬 Comentario en ${typeLabel}: ${subject}`;\n  description = change.comment.substring(0, 1000);\n} else if (action === 'change') {\n  color = COLORS.change;\n  title = `✏️ ${typeLabel} actualizado: ${subject}`;\n  const diffs = change?.diff || {};\n  const lines = Object.entries(diffs).map(([k, v]) =>\n    v.from !== undefined\n      ? `**${k}**: ~~${String(v.from)}~~ → ${String(v.to)}`\n      : `**${k}** modificado`\n  );\n  description = lines.join('\\n') || 'Actualizado';\n}\n\nconst fields = [];\nif (data?.ref) fields.push({ name: 'Referencia', value: `#${data.ref}`, inline: true });\nif (data?.status?.name) fields.push({ name: 'Estado', value: data.status.name, inline: true });\nif (data?.assigned_to?.full_name) fields.push({ name: 'Asignado a', value: data.assigned_to.full_name, inline: true });\nif (data?.project?.name) fields.push({ name: 'Proyecto', value: data.project.name, inline: true });\n\nconst url = data?.permalink || data?.project?.permalink || TAIGA_BASE;\n\nfields.push({ name: 'Enlace', value: `[Ver en Taiga](${url})`, inline: false });\n\nconst embed = {\n  title: title?.substring(0, 256),\n  color,\n  fields,\n  footer: { text: `Por ${actor}` },\n  timestamp: new Date().toISOString()\n};\n\nif (description) embed.description = description.substring(0, 4096);\nif (url) embed.url = url;\n\nreturn [{ json: { discordUrl, embeds: [embed] } }];"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "Build Discord Embed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.discordUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: $json.embeds }) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "Send to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Taiga Webhook": {
+      "main": [[{ "node": "Build Discord Embed", "type": "main", "index": 0 }]]
+    },
+    "Build Discord Embed": {
+      "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
