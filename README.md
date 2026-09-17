@@ -4,6 +4,16 @@ Instancia dockerizada de n8n en `https://n8n.ewcam.co`, compartiendo VPS con Tai
 
 ---
 
+## Versionamiento
+
+Versionado semántico (SemVer). Versión actual en `VERSION`. Historial de cambios por versión en `docs/changelog/<version>/CHANGELOG.md` (formato Keep a Changelog).
+
+- **MAJOR**: cambios incompatibles (ej. estructura de workflow, formato de .env).
+- **MINOR**: nueva funcionalidad compatible (ej. nuevo proyecto/canal en un workflow).
+- **PATCH**: fixes sin nueva funcionalidad.
+
+---
+
 ## Deploy inicial
 
 ### 1. Prerrequisitos en el VPS
@@ -142,23 +152,32 @@ docker compose up -d
 
 ## Workflow: Taiga → Discord
 
-Notifica eventos de Taiga (crear, editar, eliminar, comentar) al canal de Discord correspondiente según el nombre del proyecto.
+Notifica eventos de Taiga (crear, editar, eliminar, comentar) al canal de Discord correspondiente. Enruta primero por el atributo personalizado **DEPARTAMENTO** (si el objeto lo trae) y si no, por el nombre del proyecto.
 
 ### Flujo
 
 ```
-Taiga (webhook POST) → n8n (Build Embed) → Discord (webhook POST)
+Taiga (webhook POST) → n8n (Verify Signature) → n8n (Build Embed) → Discord (webhook POST)
+```
+
+### 0. Habilitar módulo `crypto` en el Code node
+
+El nodo **Verify Taiga Signature** usa `require('crypto')` para validar la firma HMAC del webhook. Ya está en `docker-compose.yml` (`NODE_FUNCTION_ALLOW_BUILTIN=crypto`) — solo falta aplicar:
+
+```bash
+docker compose down && docker compose up -d
 ```
 
 ### 1. Configurar webhooks de Discord
 
-En el nodo **Build Discord Embed** del workflow, reemplazar cada `__WEBHOOK-URL__` con el webhook real del canal de Discord para cada proyecto:
+En el nodo **Build Discord Embed**, reemplazar cada `__WEBHOOK-URL__` con el webhook real del canal de Discord (por proyecto y/o por departamento — ver `DISCORD_WEBHOOKS` y `DEPARTMENT_WEBHOOKS` en el código del nodo):
 
 ```js
 const DISCORD_WEBHOOKS = {
   'Nuevo SIGW':     'https://discord.com/api/webhooks/ID/TOKEN',
   'Soporte':        'https://discord.com/api/webhooks/ID/TOKEN',
   'Desarrollo':     'https://discord.com/api/webhooks/ID/TOKEN',
+  'Redna Models':   'https://discord.com/api/webhooks/ID/TOKEN',
   'GESTIÓN HUMANA': 'https://discord.com/api/webhooks/ID/TOKEN',
   'Contabilidad':   'https://discord.com/api/webhooks/ID/TOKEN',
   'Tienda Webcam':  'https://discord.com/api/webhooks/ID/TOKEN',
@@ -170,7 +189,7 @@ const DISCORD_WEBHOOKS = {
 };
 ```
 
-> `_default` recibe eventos de proyectos que no tienen canal propio.
+> `_default` recibe eventos de proyectos/departamentos sin canal propio.
 
 **Obtener un webhook de Discord:** Canal → Editar canal → Integraciones → Webhooks → Crear webhook → Copiar URL.
 
@@ -179,21 +198,22 @@ const DISCORD_WEBHOOKS = {
 En cada proyecto de Taiga: **Ajustes → Integraciones → Webhooks → Añadir webhook**
 
 - **URL:** `https://n8n.ewcam.co/webhook/taiga`
-- **Secret:** (opcional, dejar vacío)
+- **Secret:** definir una key (NO dejar vacío) — copiarla en `TAIGA_WEBHOOK_SECRET` del nodo **Verify Taiga Signature**
 - Activar todos los eventos
 
-> El nombre del proyecto en Taiga debe coincidir exactamente con las claves del objeto `DISCORD_WEBHOOKS`.
+> El nombre del proyecto en Taiga debe coincidir exactamente con las claves del objeto `DISCORD_WEBHOOKS`. El atributo personalizado **DEPARTAMENTO** (si existe en el proyecto) debe coincidir con las claves de `DEPARTMENT_WEBHOOKS`.
 
 ### 3. Importar el workflow en n8n
 
 1. n8n UI → **Workflows → Import from file**
 2. Seleccionar `workflows/taiga-discord.json`
-3. Editar el nodo **Build Discord Embed** y reemplazar los `__WEBHOOK-URL__` con las URLs reales
-4. Activar el workflow (toggle en la esquina superior derecha)
+3. Nodo **Verify Taiga Signature**: reemplazar `__TAIGA_WEBHOOK_SECRET__` con la key configurada en Taiga
+4. Nodo **Build Discord Embed**: reemplazar los `__WEBHOOK-URL__` con las URLs reales
+5. Activar el workflow (toggle en la esquina superior derecha)
 
 ### 4. Verificar
 
-Crear un item en Taiga → debe aparecer un embed en el canal de Discord correspondiente.
+Crear un item en Taiga → debe aparecer un embed en el canal de Discord correspondiente. Si la firma no coincide, la ejecución falla en **Verify Taiga Signature** (revisar en **Executions**) y no llega nada a Discord.
 
 ---
 
