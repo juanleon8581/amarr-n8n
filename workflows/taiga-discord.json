@@ -6,24 +6,45 @@
         "httpMethod": "POST",
         "path": "taiga",
         "responseMode": "onReceived",
-        "options": {}
+        "options": {
+          "rawBody": true
+        }
       },
       "id": "a1b2c3d4-0001-0001-0001-000000000001",
       "name": "Taiga Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "webhookId": "taiga-events"
     },
     {
       "parameters": {
-        "jsCode": "const raw = $input.first().json.body;\nconst { action, type, by, data, change } = raw;\n\nconst COLORS = {\n  create: 5763719,\n  delete: 15548997,\n  change: 5793266,\n  comment: 16705372\n};\n\nconst TYPE_LABELS = {\n  userstory: 'Historia de usuario',\n  issue: 'Incidencia',\n  task: 'Tarea',\n  milestone: 'Hito',\n  wikipage: 'Página Wiki'\n};\n\nconst TAIGA_BASE = 'https://taiga.ewcam.co';\n\nconst DISCORD_WEBHOOKS = {\n  'Nuevo SIGW':     '__WEBHOOK-URL__',\n  'Soporte':        '__WEBHOOK-URL__',\n  'Desarrollo':     '__WEBHOOK-URL__',\n  'GESTIÓN HUMANA': '__WEBHOOK-URL__',\n  'Contabilidad':   '__WEBHOOK-URL__',\n  'Tienda Webcam':  '__WEBHOOK-URL__',\n  'Tesoreria':      '__WEBHOOK-URL__',\n  'Fotografia':     '__WEBHOOK-URL__',\n  'Asesores':       '__WEBHOOK-URL__',\n  'Marketing':      '__WEBHOOK-URL__',\n  '_default':       '__WEBHOOK-URL__'\n};\n\nconst discordUrl = DISCORD_WEBHOOKS[data?.project?.name] || DISCORD_WEBHOOKS['_default'];\n\nconst typeLabel = TYPE_LABELS[type] || type;\nconst actor = by?.full_name || by?.username || 'Desconocido';\nconst subject = data?.subject || data?.name || 'Sin título';\nconst isComment = action === 'change' && change?.comment;\n\nlet color, title, description = '';\n\nif (action === 'create') {\n  color = COLORS.create;\n  title = `✅ ${typeLabel} creado: ${subject}`;\n  description = data?.description ? data.description.substring(0, 300) : '';\n} else if (action === 'delete') {\n  color = COLORS.delete;\n  title = `🗑️ ${typeLabel} eliminado: ${subject}`;\n} else if (isComment) {\n  color = COLORS.comment;\n  title = `💬 Comentario en ${typeLabel}: ${subject}`;\n  description = change.comment.substring(0, 1000);\n} else if (action === 'change') {\n  color = COLORS.change;\n  title = `✏️ ${typeLabel} actualizado: ${subject}`;\n  const diffs = change?.diff || {};\n  const lines = Object.entries(diffs).map(([k, v]) =>\n    v.from !== undefined\n      ? `**${k}**: ~~${String(v.from)}~~ → ${String(v.to)}`\n      : `**${k}** modificado`\n  );\n  description = lines.join('\\n') || 'Actualizado';\n}\n\nconst fields = [];\nif (data?.ref) fields.push({ name: 'Referencia', value: `#${data.ref}`, inline: true });\nif (data?.status?.name) fields.push({ name: 'Estado', value: data.status.name, inline: true });\nif (data?.assigned_to?.full_name) fields.push({ name: 'Asignado a', value: data.assigned_to.full_name, inline: true });\nif (data?.project?.name) fields.push({ name: 'Proyecto', value: data.project.name, inline: true });\n\nconst url = data?.permalink || data?.project?.permalink || TAIGA_BASE;\n\nfields.push({ name: 'Enlace', value: `[Ver en Taiga](${url})`, inline: false });\n\nconst embed = {\n  title: title?.substring(0, 256),\n  color,\n  fields,\n  footer: { text: `Por ${actor}` },\n  timestamp: new Date().toISOString()\n};\n\nif (description) embed.description = description.substring(0, 4096);\nif (url) embed.url = url;\n\nreturn [{ json: { discordUrl, embeds: [embed] } }];"
+        "jsCode": "const crypto = require('crypto');\n\n// Secret key del webhook configurado en Taiga (Project Settings → Integrations → Webhooks → \"key\").\n// Si cada proyecto usa una key distinta, cambiar esto por un mapa { 'Nombre Proyecto': 'key' }.\nconst TAIGA_WEBHOOK_SECRET = '__TAIGA_WEBHOOK_SECRET__';\n\nconst item = $input.first();\nconst signature = item.json.headers?.['x-taiga-webhook-signature'];\n\nif (!signature) {\n  throw new Error('Rechazado: falta el header x-taiga-webhook-signature.');\n}\n\nconst rawBase64 = item.binary?.data?.data;\nif (!rawBase64) {\n  throw new Error('Rechazado: no llegó el raw body. Activar la opción \"Raw Body\" en el nodo Webhook.');\n}\n\nconst rawBody = Buffer.from(rawBase64, 'base64');\nconst expectedSignature = crypto\n  .createHmac('sha1', TAIGA_WEBHOOK_SECRET)\n  .update(rawBody)\n  .digest('hex');\n\nif (expectedSignature !== signature) {\n  throw new Error('Rechazado: firma de webhook inválida (x-taiga-webhook-signature no coincide).');\n}\n\nreturn [item];"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "Verify Taiga Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.body;\nconst { action, type, by, data, change } = raw;\n\nconst COLORS = {\n  create: 5763719,\n  delete: 15548997,\n  change: 5793266,\n  comment: 16705372\n};\n\nconst TYPE_LABELS = {\n  userstory: 'Historia de usuario',\n  issue: 'Incidencia',\n  task: 'Tarea',\n  epic: 'Épica',\n  milestone: 'Hito',\n  wikipage: 'Página Wiki'\n};\n\nconst TAIGA_BASE = 'https://taiga.ewcam.co';\n\nconst DISCORD_WEBHOOKS = {\n  'Nuevo SIGW':     '__WEBHOOK-URL__',\n  'Soporte':        '__WEBHOOK-URL__',\n  'Desarrollo':     '__WEBHOOK-URL__',\n  'Redna Models':   '__WEBHOOK-URL__',\n  'GESTIÓN HUMANA': '__WEBHOOK-URL__',\n  'Contabilidad':   '__WEBHOOK-URL__',\n  'Tienda Webcam':  '__WEBHOOK-URL__',\n  'Tesoreria':      '__WEBHOOK-URL__',\n  'Fotografia':     '__WEBHOOK-URL__',\n  'Asesores':       '__WEBHOOK-URL__',\n  'Marketing':      '__WEBHOOK-URL__',\n  '_default':       '__WEBHOOK-URL__'\n};\n\n// Canales por DEPARTAMENTO (atributo personalizado \"DEPARTAMENTO\" en épicas/US/tareas/issues).\n// Cuando el objeto trae ese atributo, prima sobre el canal por proyecto.\n// Taiga lo manda plano: data.custom_attributes_values.DEPARTAMENTO\nconst DEPARTMENT_WEBHOOKS = {\n  'CONTABILIDAD': DISCORD_WEBHOOKS['Contabilidad'],\n  'SOPORTE':      DISCORD_WEBHOOKS['Soporte'],\n  'ASESORES':     DISCORD_WEBHOOKS['Asesores'],\n  'RRHH':         DISCORD_WEBHOOKS['GESTIÓN HUMANA'],\n  'FOTOGRAFIA':   DISCORD_WEBHOOKS['Fotografia'],\n  'MARKETING':    DISCORD_WEBHOOKS['Marketing'],\n  'DESARROLLO':   DISCORD_WEBHOOKS['Desarrollo'],\n  'GERENCIA':     '__WEBHOOK-URL__', // TODO: sin canal propio en Discord todavía\n  'COMERCIAL':    '__WEBHOOK-URL__'  // TODO: sin canal propio en Discord todavía\n};\n\nconst departmentValue = data?.custom_attributes_values?.DEPARTAMENTO;\nconst departmentUrl = departmentValue && DEPARTMENT_WEBHOOKS[departmentValue];\n\nconst discordUrl =\n  (departmentUrl && departmentUrl !== '__WEBHOOK-URL__' ? departmentUrl : null) ||\n  DISCORD_WEBHOOKS[data?.project?.name] ||\n  DISCORD_WEBHOOKS['_default'];\n\nconst typeLabel = TYPE_LABELS[type] || type;\nconst actor = by?.full_name || by?.username || 'Desconocido';\nconst subject = data?.subject || data?.name || 'Sin título';\nconst isComment = action === 'change' && change?.comment;\n\n// Formatea un valor de diff: strings/numbers tal cual, objetos por su full_name/name/subject.\nfunction formatDiffValue(v) {\n  if (v === null || v === undefined || v === '') return '—';\n  if (typeof v === 'object') return v.full_name || v.name || v.subject || JSON.stringify(v);\n  return String(v);\n}\n\nlet color, title, description = '';\n\nif (action === 'create') {\n  color = COLORS.create;\n  title = `✅ ${typeLabel} creado: ${subject}`;\n  description = data?.description ? data.description.substring(0, 300) : '';\n} else if (action === 'delete') {\n  color = COLORS.delete;\n  title = `🗑️ ${typeLabel} eliminado: ${subject}`;\n} else if (isComment) {\n  color = COLORS.comment;\n  title = `💬 Comentario en ${typeLabel}: ${subject}`;\n  description = change.comment.substring(0, 1000);\n} else if (action === 'change') {\n  color = COLORS.change;\n  title = `✏️ ${typeLabel} actualizado: ${subject}`;\n  const diffs = change?.diff || {};\n  const lines = [];\n\n  // Los custom attributes (ej. DEPARTAMENTO) vienen en una forma distinta al resto del diff.\n  if (diffs.custom_attributes) {\n    for (const c of diffs.custom_attributes.changed || []) {\n      const [from, to] = c.changes?.value || [];\n      lines.push(`**${c.name}**: ~~${formatDiffValue(from)}~~ → ${formatDiffValue(to)}`);\n    }\n    for (const c of diffs.custom_attributes.new || []) {\n      lines.push(`**${c.name}** definido`);\n    }\n  }\n\n  for (const [k, v] of Object.entries(diffs)) {\n    if (k === 'custom_attributes') continue;\n    if (v && typeof v === 'object' && ('from' in v || 'to' in v)) {\n      lines.push(`**${k}**: ~~${formatDiffValue(v.from)}~~ → ${formatDiffValue(v.to)}`);\n    } else {\n      lines.push(`**${k}** modificado`);\n    }\n  }\n\n  description = lines.join('\\n') || 'Actualizado';\n}\n\nconst fields = [];\nif (data?.ref) fields.push({ name: 'Referencia', value: `#${data.ref}`, inline: true });\nif (data?.status?.name) fields.push({ name: 'Estado', value: data.status.name, inline: true });\nif (data?.assigned_to?.full_name) fields.push({ name: 'Asignado a', value: data.assigned_to.full_name, inline: true });\nif (data?.project?.name) fields.push({ name: 'Proyecto', value: data.project.name, inline: true });\nif (departmentValue) fields.push({ name: 'Departamento', value: departmentValue, inline: true });\n\nconst url = data?.permalink || data?.project?.permalink || TAIGA_BASE;\n\nfields.push({ name: 'Enlace', value: `[Ver en Taiga](${url})`, inline: false });\n\nconst embed = {\n  title: title?.substring(0, 256),\n  color,\n  fields,\n  author: {\n    name: actor,\n    icon_url: by?.photo || undefined,\n    url: by?.permalink || undefined\n  },\n  timestamp: new Date().toISOString()\n};\n\nif (data?.project?.logo_big_url) embed.thumbnail = { url: data.project.logo_big_url };\nif (description) embed.description = description.substring(0, 4096);\nif (url) embed.url = url;\n\nreturn [{ json: { discordUrl, embeds: [embed] } }];"
       },
       "id": "a1b2c3d4-0001-0001-0001-000000000002",
       "name": "Build Discord Embed",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [
+        680,
+        300
+      ]
     },
     {
       "parameters": {
@@ -38,15 +59,45 @@
       "name": "Send to Discord",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [680, 300]
+      "position": [
+        900,
+        300
+      ]
     }
   ],
   "connections": {
     "Taiga Webhook": {
-      "main": [[{ "node": "Build Discord Embed", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Verify Taiga Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Taiga Signature": {
+      "main": [
+        [
+          {
+            "node": "Build Discord Embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Discord Embed": {
-      "main": [[{ "node": "Send to Discord", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
