@@ -15,10 +15,19 @@ services:
       - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
       - GENERIC_TIMEZONE=${TIMEZONE}
       - TZ=${TIMEZONE}
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
     volumes:
-      - ./data:/home/node/.n8n
+      - /opt/n8n/data:/home/node/.n8n
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:5678/healthz",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
